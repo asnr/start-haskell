@@ -25,29 +25,34 @@ parseVar code = let headChar = headMay code in
       else Nothing
 
 parseApp :: T.Text -> Maybe ParseResult
-parseApp code = let headChar = headMay code in
-  case headChar of
+parseApp code = let maybeCode = consumeToken '(' code in
+  case maybeCode of
     Nothing -> Nothing
-    Just c -> if not (c == '(')
-      then Nothing
-      else let maybeResult = parse $ T.tail code in
-        case maybeResult of
-          Nothing -> Nothing
-          Just result -> let maybeNextResult = parse $ unparsedCode result in
-            case maybeNextResult of
-              Nothing -> Nothing
-              Just nextResult -> let lastHeadChar = headMay $ unparsedCode nextResult in
-                case lastHeadChar of
+    Just codeAfterOpenBracket -> let maybeResult = parse codeAfterOpenBracket in
+      case maybeResult of
+        Nothing -> Nothing
+        Just result -> let maybeNextResult = parse $ unparsedCode result in
+          case maybeNextResult of
+            Nothing -> Nothing
+            Just nextResult ->
+              let maybeEndCode = consumeToken ')' $ unparsedCode nextResult in
+                case maybeEndCode of
                   Nothing -> Nothing
-                  Just d -> if not (d == ')')
-                    then Nothing
-                    else Just $ ParseResult (App (expr result) (expr nextResult)) (T.tail $ unparsedCode nextResult)
+                  Just endCode -> Just $ ParseResult (App (expr result) (expr nextResult)) endCode
 
 parse :: T.Text -> Maybe ParseResult
 parse code = let varParse = parseVar code in
   case varParse of
     Nothing -> parseApp code
     x -> x
+
+consumeToken :: Char -> T.Text -> Maybe T.Text
+consumeToken token code = let headChar = headMay code in
+  case headChar of
+    Nothing -> Nothing
+    Just char -> if char == token
+      then Just $ T.tail code
+      else Nothing
 
 parseAll :: T.Text -> Maybe ParseResult
 parseAll code = let maybeResult = parse code in
