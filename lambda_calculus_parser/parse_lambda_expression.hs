@@ -1,3 +1,4 @@
+import Control.Applicative
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 
@@ -47,13 +48,7 @@ parseLam code = do {
   }
 
 parse :: T.Text -> Maybe ParseResult
-parse code = let varParse = parseVar code in
-  case varParse of
-    Nothing -> let appParse = parseApp code in
-      case appParse of
-        Nothing -> parseLam code
-        y -> y
-    x -> x
+parse code = parseVar code <|> parseApp code <|> parseLam code
 
 consumeToken :: Char -> T.Text -> Maybe T.Text
 consumeToken token code = do {
