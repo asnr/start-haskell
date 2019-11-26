@@ -55,9 +55,8 @@ consumeToken token code = do
     else Nothing
 
 parseAll :: T.Text -> Maybe ParseResult
-parseAll code = let maybeResult = parse code in
-  case maybeResult of
-    Nothing -> Nothing
-    Just result -> if T.null $ unparsedCode result
-      then Just result
-      else Nothing
+parseAll code = do
+  result <- parse code
+  if T.null $ unparsedCode result
+    then Just result
+    else Nothing
