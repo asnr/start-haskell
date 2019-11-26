@@ -12,7 +12,7 @@ headMay t = if T.null t then Nothing else Just $ T.head t
 
 -- We are going to ignore lexing for now, so all variable names will be single
 -- letters in a-z.
-data Expr = Var Char | App Expr Expr deriving (Show)
+data Expr = Var Char | App Expr Expr | Lam Char Expr deriving (Show)
 
 data ParseResult = ParseResult { expr :: Expr, unparsedCode :: T.Text } deriving (Show)
 
@@ -33,10 +33,26 @@ parseApp code = do {
   Just $ ParseResult (App (expr result) (expr nextResult)) remainingCode
   }
 
+parseLam :: T.Text -> Maybe ParseResult
+parseLam code = do {
+  codeAfterOpenBracket <- consumeToken '(' code;
+  codeAfterLambda <- consumeToken '\\' codeAfterOpenBracket;
+  varResult <- parseVar codeAfterLambda;
+  codeAfterPeriod <- consumeToken '.' $ unparsedCode varResult;
+  exprResult <- parse codeAfterPeriod;
+  codeAfterCloseBracket <- consumeToken ')' $ unparsedCode exprResult;
+  case expr varResult of
+    Var c -> Just $ ParseResult (Lam c (expr exprResult)) codeAfterCloseBracket
+    _ -> Nothing
+  }
+
 parse :: T.Text -> Maybe ParseResult
 parse code = let varParse = parseVar code in
   case varParse of
-    Nothing -> parseApp code
+    Nothing -> let appParse = parseApp code in
+      case appParse of
+        Nothing -> parseLam code
+        y -> y
     x -> x
 
 consumeToken :: Char -> T.Text -> Maybe T.Text
