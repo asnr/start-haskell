@@ -1,4 +1,5 @@
-import Control.Applicative ((<|>))
+import Control.Applicative
+import Control.Monad (liftM, ap)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 
@@ -11,52 +12,88 @@ isWhitespace c = c == ' ' || c == '\n'
 headMay :: T.Text -> Maybe Char
 headMay t = if T.null t then Nothing else Just $ T.head t
 
+data ParseSuccess exprT = ParseSuccess { expr :: exprT, unparsedCode :: T.Text }
+  deriving (Show)
+
+data Parser exprT = Parser { parseFunc :: T.Text -> Maybe (ParseSuccess exprT) }
+
+instance Monad Parser where
+  Parser parseFunction >>= makeNextParser = Parser (\code -> let firstResult = parseFunction code in
+    case firstResult of
+      Nothing -> Nothing
+      Just parseSuccess -> let nextParser = makeNextParser $ expr parseSuccess
+                               nextParseFunction = parseFunc nextParser in
+        nextParseFunction $ unparsedCode parseSuccess
+     )
+
+  return expression = Parser (\code -> Just $ ParseSuccess expression code)
+
+instance Functor Parser where
+  fmap = liftM
+
+instance Applicative Parser where
+  pure  = return
+  (<*>) = ap
+
+instance Alternative Parser where
+  empty = Parser (\_ -> Nothing)
+
+  Parser leftParser <|> Parser rightParser = Parser (\code ->
+    leftParser code <|> rightParser code)
+
 -- We are going to ignore lexing for now, so all variable names will be single
 -- letters in a-z.
 data Expr = Var Char | App Expr Expr | Lam Char Expr deriving (Show)
 
-data ParseResult = ParseResult { expr :: Expr, unparsedCode :: T.Text } deriving (Show)
+parseVar :: Parser Expr
+parseVar = Parser (\code ->
+  do
+    c <- headMay code
+    if c >= 'a' && c <= 'z'
+      then Just $ ParseSuccess (Var c) (T.tail code)
+      else Nothing)
 
-parseVar :: T.Text -> Maybe ParseResult
-parseVar code = do
-  c <- headMay code
-  if c >= 'a' && c <= 'z'
-    then Just $ ParseResult (Var c) (T.tail code)
-    else Nothing
+parseApp :: Parser Expr
+parseApp = do
+  consumeToken '('
+  leftExpr <- parse
+  rightExpr <- parse
+  consumeToken ')'
+  return (App leftExpr rightExpr)
 
-parseApp :: T.Text -> Maybe ParseResult
-parseApp code = do
-  codeAfterOpenBracket <- consumeToken '(' code
-  result <- parse codeAfterOpenBracket
-  nextResult <- parse $ unparsedCode result
-  remainingCode <- consumeToken ')' $ unparsedCode nextResult
-  Just $ ParseResult (App (expr result) (expr nextResult)) remainingCode
+parseLam :: Parser Expr
+parseLam = do
+  consumeToken '('
+  consumeToken '\\'
+  var <- varIdent
+  consumeToken '.'
+  body <- parse
+  consumeToken ')'
+  return (Lam var body)
 
-parseLam :: T.Text -> Maybe ParseResult
-parseLam code = do
-  codeAfterOpenBracket <- consumeToken '(' code
-  codeAfterLambda <- consumeToken '\\' codeAfterOpenBracket
-  varResult <- parseVar codeAfterLambda
-  codeAfterPeriod <- consumeToken '.' $ unparsedCode varResult
-  exprResult <- parse codeAfterPeriod
-  codeAfterCloseBracket <- consumeToken ')' $ unparsedCode exprResult
-  case expr varResult of
-    Var c -> Just $ ParseResult (Lam c (expr exprResult)) codeAfterCloseBracket
-    _ -> Nothing
+parse :: Parser Expr
+parse = parseVar <|> parseApp <|> parseLam
 
-parse :: T.Text -> Maybe ParseResult
-parse code = parseVar code <|> parseApp code <|> parseLam code
+varIdent :: Parser Char
+varIdent = Parser (\code ->
+  do
+    c <- headMay code
+    if c >= 'a' && c <= 'z'
+      then Just $ ParseSuccess c (T.tail code)
+      else Nothing)
 
-consumeToken :: Char -> T.Text -> Maybe T.Text
-consumeToken token code = do
-  headChar <- headMay code
-  if headChar == token
-    then Just $ T.tail code
-    else Nothing
+consumeToken :: Char -> Parser ()
+consumeToken token = Parser (\code ->
+  do
+    headChar <- headMay code
+    if headChar == token
+      then Just $ ParseSuccess () (T.tail code)
+      else Nothing)
 
-parseAll :: T.Text -> Maybe ParseResult
-parseAll code = do
-  result <- parse code
-  if T.null $ unparsedCode result
-    then Just result
-    else Nothing
+parseAll :: T.Text -> Maybe Expr
+parseAll code = let parser = parseFunc parse in
+  do
+    result <- parser code
+    if T.null $ unparsedCode result
+      then Just $ expr result
+      else Nothing
