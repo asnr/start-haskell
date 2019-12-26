@@ -5,12 +5,6 @@ import Control.Monad (liftM, ap)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 
-main :: IO()
-main = TIO.getContents >>= putStr . show . parseAll . T.filter (not . isWhitespace)
-
-isWhitespace :: Char -> Bool
-isWhitespace c = c == ' ' || c == '\n'
-
 headMay :: T.Text -> Maybe Char
 headMay t = if T.null t then Nothing else Just $ T.head t
 
